@@ -1,0 +1,15 @@
+* text=auto
+
+# Preserve source model bytes, including IFC line endings.
+*.ifc -text whitespace=cr-at-eol
+*.skp binary
+*.glb binary
+*.bin binary
+*.wasm binary
+
+# Compiled bundles include upstream GLSL strings; review their sources instead.
+assets/** -text -diff linguist-generated=true
+models/** -text linguist-generated=true
+public/models/** -text linguist-generated=true
+index.html linguist-generated=true
+favicon.svg linguist-generated=true

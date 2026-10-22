@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1d2d2c" />
+    <meta name="description" content="Архитектурная мастерская T2: интерактивные модели IFC и SketchUp, слои, отделка, разрезы и измерения." />
+    <title>ATELIER — T2 / Архитектурная мастерская</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <script type="module" crossorigin src="./assets/index-C6H0QI5y.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/three-vOVq2ai4.js">
+    <link rel="modulepreload" crossorigin href="./assets/three-addons-BSHl7Jj6.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-Dpm-srdI.css">
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="ATELIER — главная">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 24V12L16 5l12 7v12l-12 7L4 24Z M4 12l12 7 12-7 M16 19v12 M10 15V9l12 7v12" /></svg>
+          <span>ATELIER<span class="brand-dot">.</span></span>
+        </a>
+        <div class="project-breadcrumb"><span class="slash">/</span><span>Архитектурная мастерская</span><span class="project-tag">T2</span></div>
+        <div class="header-actions">
+          <span class="local-status"><span></span>Локальный проект</span>
+          <button id="about-button" class="header-button"><i data-lucide="info"></i><span>О моделях</span></button>
+          <button id="upload-button" class="upload-button"><i data-lucide="plus"></i><span>Открыть модель</span></button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="sidebar project-sidebar" id="project-sidebar" aria-label="Модели и слои">
+          <div class="sidebar-heading"><div><p class="eyebrow">ПРОЕКТ / 01</p><h1>Пространство T2</h1></div><span class="project-symbol">T<span>2</span></span></div>
+          <section class="models-section">
+            <div class="section-heading"><h2>Модели проекта</h2><span class="small-count">02</span></div>
+            <button class="model-card active" data-model="ifc" aria-pressed="true">
+              <span class="file-symbol">IFC</span><span class="model-copy"><strong>T2_Ap</strong><small>ARCHICAD · BIM-структура</small></span><span class="model-radio"></span>
+            </button>
+            <button class="model-card" data-model="skp" aria-pressed="false">
+              <span class="file-symbol skp">SKP</span><span class="model-copy"><strong>T2_Ap+</strong><small>SketchUp · исходные текстуры</small></span><span class="model-radio"></span>
+            </button>
+            <div id="custom-models"></div>
+            <p class="model-note"><i data-lucide="shield-check"></i>Файлы обрабатываются локально</p>
+          </section>
+
+          <section class="display-section">
+            <div class="section-heading"><h2>Отображение</h2></div>
+            <div class="mode-switch" role="group" aria-label="Режим отображения">
+              <button data-mode="original" class="active" aria-pressed="true" title="Исходные материалы модели"><i data-lucide="box"></i><span>Оригинал</span></button>
+              <button data-mode="finish" aria-pressed="false" title="Ваши варианты отделки"><i data-lucide="paintbrush"></i><span>Отделка</span></button>
+              <button data-mode="white" aria-pressed="false" title="Белая модель без текстур"><i data-lucide="layers-2"></i><span>Макет</span></button>
+            </div>
+            <label class="setting-row"><span><i data-lucide="image"></i>Текстуры</span><input id="textures-toggle" type="checkbox" role="switch" checked /><span class="toggle-track"></span></label>
+            <label class="setting-row"><span><i data-lucide="scan-line"></i>Контуры</span><input id="edges-toggle" type="checkbox" role="switch" /><span class="toggle-track"></span></label>
+            <label class="setting-row"><span><i data-lucide="ruler"></i>Габариты</span><input id="dimensions-toggle" type="checkbox" role="switch" /><span class="toggle-track"></span></label>
+          </section>
+
+          <section class="layers-section">
+            <div class="section-heading"><h2>Слои модели</h2><button id="show-layers" class="text-button">Показать все</button></div>
+            <label class="layer-search"><i data-lucide="search"></i><input id="layer-search" type="search" placeholder="Найти слой" aria-label="Найти слой" /><kbd>/</kbd></label>
+            <div id="layers-list" class="layers-list"><p class="muted loading-copy">Загрузка структуры…</p></div>
+            <p id="ceiling-note" class="layer-note">Потолок скрыт, чтобы открыть интерьер.</p>
+          </section>
+          <div class="sidebar-bottom"><i data-lucide="layers"></i><span id="floor-label">1-й этаж</span><span class="unit-chip">МЕТРЫ</span></div>
+        </aside>
+
+        <section class="stage" aria-label="Рабочая область 3D">
+          <div id="viewport"></div>
+          <div class="stage-heading"><div class="stage-title"><span class="status-dot"></span><span id="model-title">T2_Ap.ifc</span><span id="format-chip">IFC 2×3</span></div><span class="view-note" id="view-label">Аксонометрия</span></div>
+          <div class="mobile-panels"><button id="project-panel-toggle" class="icon-button" aria-label="Модели и слои"><i data-lucide="layers"></i></button><button id="materials-panel-toggle" class="icon-button" aria-label="Материалы"><i data-lucide="palette"></i></button></div>
+          <div class="viewport-tools" role="toolbar" aria-label="Инструменты просмотра">
+            <button id="orbit-tool" class="tool-button active" aria-label="Вращать модель" title="Вращение и выбор объектов" aria-pressed="true"><i data-lucide="orbit"></i></button>
+            <button id="measure-tool" class="tool-button" aria-label="Измерить расстояние" title="Измерить между двумя точками (M)" aria-pressed="false"><i data-lucide="ruler"></i></button>
+            <button id="section-tool" class="tool-button" aria-label="Включить разрез" title="Разрез модели" aria-pressed="false"><i data-lucide="slice"></i></button>
+            <span class="toolbar-separator"></span>
+            <button id="fit-button" class="tool-button" aria-label="Показать всю модель" title="Вписать в экран (F)"><i data-lucide="focus"></i></button>
+            <button id="grid-button" class="tool-button active" aria-label="Показывать сетку" title="Сетка — 1 метр" aria-pressed="true"><i data-lucide="grid-2x2"></i></button>
+          </div>
+          <div id="section-panel" class="floating-panel section-panel" hidden>
+            <div class="section-panel-title"><span><i data-lucide="slice"></i>Разрез</span><button id="section-close" class="plain-icon" aria-label="Закрыть разрез"><i data-lucide="x"></i></button></div>
+            <div class="section-axis"><label for="section-axis">Плоскость</label><select id="section-axis"><option value="y">Горизонтальная · Y</option><option value="x">Вертикальная · X</option><option value="z">Вертикальная · Z</option></select></div>
+            <input id="section-range" type="range" min="0" max="100" value="72" aria-label="Положение разреза" /><div class="range-caption"><span>Положение</span><strong id="section-height">—</strong></div>
+          </div>
+          <div id="measure-panel" class="floating-panel measure-panel" hidden><i data-lucide="ruler"></i><div><strong id="measure-instruction">Выберите первую точку</strong><small>Привязка к ближайшим вершинам · Esc — выход</small></div><button id="clear-measures" class="plain-icon" title="Удалить измерения" aria-label="Удалить измерения" disabled><i data-lucide="trash-2"></i></button></div>
+          <div class="stage-bottom">
+            <div class="view-switch" role="group" aria-label="Ракурс камеры"><button data-view="iso" class="active" aria-pressed="true"><i data-lucide="box"></i>3D</button><button data-view="top" aria-pressed="false">План</button><button data-view="front" aria-pressed="false">Фасад</button><button data-view="side" aria-pressed="false">Сбоку</button></div>
+            <div class="navigation-hint"><span><i data-lucide="mouse-pointer-2"></i>Вращение</span><span>ПКМ — сдвиг</span><span>Колесо — масштаб</span></div>
+            <div class="axis-indicator" aria-hidden="true"><span class="axis-y">Y</span><span class="axis-z">Z</span><span class="axis-x">X</span><svg viewBox="0 0 60 60"><path class="y-line" d="M30 36V9"/><path class="x-line" d="m30 36 22 12"/><path class="z-line" d="M30 36 8 48"/><circle cx="30" cy="36" r="3"/></svg></div>
+          </div>
+          <div id="loading-overlay" class="loading-overlay"><div class="loading-mark"><span></span><span></span><span></span></div><p id="loading-label">Открываем пространство</p><span id="loading-detail">Геометрия и структура модели</span><div class="loading-bar"><span id="loading-progress"></span></div></div>
+          <div id="error-panel" class="error-panel" hidden><i data-lucide="triangle-alert"></i><h2>Не удалось открыть модель</h2><p id="error-message"></p><button id="error-close" class="primary-button">Вернуться к просмотру</button></div>
+        </section>
+
+        <aside class="sidebar materials-sidebar" id="materials-sidebar" aria-label="Элемент и материалы">
+          <div class="materials-heading"><div><p class="eyebrow">РАБОТА С ПОВЕРХНОСТЬЮ</p><h2>Материалы и отделка</h2></div><i data-lucide="palette"></i></div>
+          <section class="selection-section">
+            <div class="section-heading"><h3>Выбранный элемент</h3><button id="deselect-button" class="plain-icon" title="Снять выделение" aria-label="Снять выделение" hidden><i data-lucide="x"></i></button></div>
+            <div id="selection-empty" class="selection-empty"><div class="selection-icon"><i data-lucide="mouse-pointer-2"></i></div><p>Начните с поверхности</p><small>Нажмите на элемент модели,<br/>чтобы узнать размеры и сменить материал.</small></div>
+            <div id="selection-detail" hidden><div class="selected-name"><span class="selected-icon"><i data-lucide="box"></i></span><div><h3 id="element-name"></h3><small id="element-type"></small></div></div><dl class="element-properties"><div><dt>Слой</dt><dd id="element-layer"></dd></div><div><dt>Габариты, м</dt><dd id="element-size"></dd></div><div><dt>Материал</dt><dd id="element-material"></dd></div><div><dt>ID</dt><dd id="element-id" class="mono"></dd></div></dl><button id="focus-selected" class="secondary-button"><i data-lucide="focus"></i>Приблизить элемент</button></div>
+          </section>
+          <section class="finish-section"><div class="section-heading"><h3>Библиотека отделки</h3><span class="tiny-tag">04</span></div><p class="section-description">Выберите поверхность в модели,<br/>затем попробуйте материал.</p><div id="finish-library" class="finish-library"></div><button id="upload-texture" class="texture-upload"><i data-lucide="upload"></i><span>Своя текстура<small>PNG, JPG или WebP</small></span><i data-lucide="plus"></i></button><label class="scope-control" for="material-scope">Применять к<select id="material-scope"><option value="element">Выбранному элементу</option><option value="layer">Всему его слою</option></select></label><div class="texture-size-heading"><label for="texture-scale">Размер повтора</label><output id="texture-scale-value">1,00 м</output></div><input id="texture-scale" type="range" min="25" max="400" value="100" aria-label="Размер повтора текстуры в сантиметрах" /><button id="reset-finish" class="reset-finish"><i data-lucide="rotate-ccw"></i>Вернуть исходный материал</button></section>
+          <div class="palette-card"><span class="eyebrow">ПОПРОБУЙТЕ ВАРИАНТ</span><div class="palette-colors"><span></span><span></span><span></span><span></span></div><h3>Тёплый минимализм</h3><p>Дуб, светлые стены и микроцемент.<br/>Применяется к слоям проекта.</p><button id="apply-palette">Применить отделку<i data-lucide="arrow-up-right"></i></button></div>
+          <div class="material-footnote"><i data-lucide="info"></i><span>Режим «Оригинал» показывает исходное оформление модели.</span></div>
+        </aside>
+      </main>
+
+      <footer class="statusbar"><div><span class="status-dot"></span><span id="status-text">Загрузка модели…</span></div><div class="status-metrics"><span id="element-count">— элементов</span><span id="triangle-count">— треугольников</span><span class="status-divider"></span><span>Масштаб 1:1</span><span class="version-label">ATELIER / 01</span></div></footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <input id="model-input" type="file" accept=".ifc,.skp,.glb" hidden />
+    <input id="texture-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+    <dialog id="about-dialog"><div class="dialog-heading"><span class="eyebrow">ИССЛЕДОВАНИЕ / ФОРМАТЫ</span><button id="about-close" class="plain-icon" aria-label="Закрыть"><i data-lucide="x"></i></button></div><h2>Две модели.<br/>Разные сильные стороны.</h2><p class="dialog-intro">Для BIM-структуры используем IFC. Для исходных текстур — SketchUp, подготовленный в GLB для браузера.</p><div class="format-comparison"><article><span class="file-symbol">IFC</span><h3>T2_Ap.ifc</h3><p>186 элементов, 6 именованных слоёв, 10 стилей поверхности. Есть структура этажа и BIM-идентификаторы. Изображения текстур в экспорт не включены.</p><span class="comparison-tag">Лучше для структуры и свойств</span></article><article><span class="file-symbol skp">SKP</span><h3>T2_Ap+.skp</h3><p>8 слоёв, 11 исходных материалов, 2 текстуры. Сохранены размещения и компоненты. Веб-копия GLB включает изображения и сведения о слоях.</p><span class="comparison-tag">Лучше для исходной отделки</span></article></div><p class="dialog-note">Габариты вычисляются по геометрии в метрах; инструмент линейки измеряет между двумя точками. Это не исходные размерные цепочки чертежа. Потолок при открытии скрыт. Процедурная отделка — визуальный вариант, а не спецификация проекта.</p><p class="dialog-note">У IFC-парсера есть предупреждения о некоторых вырожденных контурах BRep. Полноту таких мелких деталей нужно сверить с исходной CAD-моделью. Визуальную проверку в браузере выполняет пользователь.</p><div class="research-links"><a href="https://docs.thatopen.com/" target="_blank" rel="noreferrer">That Open / IFC<i data-lucide="arrow-up-right"></i></a><a href="https://github.com/iamahsanmehmood/openskp" target="_blank" rel="noreferrer">OpenSKP<i data-lucide="arrow-up-right"></i></a><a href="https://help.sketchup.com/en/sketchup/working-gltf-files" target="_blank" rel="noreferrer">SketchUp → GLB<i data-lucide="arrow-up-right"></i></a></div></dialog>
+  </body>
+</html>

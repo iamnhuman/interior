@@ -1,0 +1,13 @@
+{
+  "validator": "2.0.0-dev.3.10",
+  "issues": {
+    "errors": 0,
+    "warnings": 0,
+    "infos": 499,
+    "truncated": false
+  },
+  "counts": {
+    "UNUSED_OBJECT": 498,
+    "IMAGE_NPOT_DIMENSIONS": 1
+  }
+}
