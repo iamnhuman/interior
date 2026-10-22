@@ -1,6 +1,6 @@
 import './style.css';
 import * as THREE from 'three';
-import { createIcons, ArrowUpRight, Box, Check, Focus, Grid2x2, Image, Info, Layers, Layers2, MousePointer2, Orbit, Paintbrush, Palette, Plus, RotateCcw, Ruler, ScanLine, Search, ShieldCheck, Slice, Trash2, TriangleAlert, Upload, X } from 'lucide';
+import { createIcons, ArrowUpRight, Box, Check, Focus, Grid2x2, Image, Info, Layers, Layers2, MousePointer2, Navigation, Orbit, Paintbrush, Palette, Plus, RotateCcw, Ruler, ScanLine, Search, ShieldCheck, Slice, Trash2, TriangleAlert, Upload, X } from 'lucide';
 import { ModelViewer, meters } from './viewer.js';
 import { finishes } from './textures.js';
 import { unpackIfc } from './lib/ifc.mjs';
@@ -8,7 +8,7 @@ import { pageAssetUrl } from './lib/urls.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-const icons = { ArrowUpRight, Box, Check, Focus, Grid2x2, Image, Info, Layers, Layers2, MousePointer2, Orbit, Paintbrush, Palette, Plus, RotateCcw, Ruler, ScanLine, Search, ShieldCheck, Slice, Trash2, TriangleAlert, Upload, X };
+const icons = { ArrowUpRight, Box, Check, Focus, Grid2x2, Image, Info, Layers, Layers2, MousePointer2, Navigation, Orbit, Paintbrush, Palette, Plus, RotateCcw, Ruler, ScanLine, Search, ShieldCheck, Slice, Trash2, TriangleAlert, Upload, X };
 const refreshIcons = () => createIcons({ icons, attrs: { 'stroke-width': 1.65 } });
 const escapeHtml = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let toastTimer, busy = false, currentModel = 'ifc', viewer;
@@ -22,6 +22,19 @@ function setBusy(value, label = 'Открываем пространство') {
 function showError(error) {console.error(error);$('#error-message').textContent = error.message || 'Неизвестная ошибка';$('#error-panel').hidden = false;$('#status-text').textContent = 'Ошибка открытия файла';}
 async function get(path, type = 'json') {const response = await fetch(pageAssetUrl(path));if (!response.ok) throw new Error(`Не удалось загрузить файл (${response.status}).`);return type === 'json' ? response.json() : response.arrayBuffer();}
 function syncMode() {$$('[data-mode]').forEach(b => {const active = b.dataset.mode === viewer.settings.mode;b.classList.toggle('active', active);b.setAttribute('aria-pressed', active);});}
+function syncNavigation() {
+  for (const name of ['orbit', 'fly', 'measure']) {
+    const active = name === 'measure' ? viewer.tool === 'measure' : viewer.tool !== 'measure' && viewer.navigationMode === name;
+    $(`#${name}-tool`).classList.toggle('active', active);$(`#${name}-tool`).setAttribute('aria-pressed', active);
+  }
+  const flying = viewer.navigationMode === 'fly';$('#fly-panel').hidden = !flying || viewer.tool === 'measure';
+  if (flying) {
+    $$('[data-view]').forEach(button => {button.classList.remove('active');button.setAttribute('aria-pressed', false);});
+    $('#view-label').textContent = 'Свободная камера';
+    $('#navigation-hint').innerHTML = '<span>WASD — полёт</span><span>ПКМ — обзор</span><span>Q/E — высота</span><span>Esc — выход</span>';
+  } else $('#navigation-hint').innerHTML = '<span>ЛКМ — вращение</span><span>ПКМ — сдвиг</span><span>Колесо — масштаб</span>';
+  $$('[data-fly-motion]').forEach(button => button.classList.remove('pressed'));
+}
 function shortLayer(name) {const label = name.replace(/^(Конструктив|Интерьер|Отделка|Элемент Модели)\s*-\s*/i, '');return label.charAt(0).toUpperCase() + label.slice(1).toLowerCase();}
 function renderLayers() {
   const query = $('#layer-search').value.toLowerCase();
@@ -90,6 +103,18 @@ try {
     renderLayers();
   });
   viewer.addEventListener('select', ({ detail }) => updateSelection(detail));
+  viewer.addEventListener('hover', ({ detail }) => {
+    $('#hover-dimensions').hidden = !detail;
+    if (!detail) return;
+    $('#hover-element-name').textContent = detail.name;
+    const size = viewer.boxFor(detail).getSize(new THREE.Vector3());
+    for (const axis of ['x', 'y', 'z']) $(`#hover-size-${axis}`).textContent = meters(size[axis]);
+  });
+  viewer.addEventListener('hoverposition', ({ detail }) => {
+    const card = $('#hover-dimensions');
+    card.style.left = `${Math.max(8, Math.min(detail.x + 17, detail.width - card.offsetWidth - 10))}px`;
+    card.style.top = `${Math.max(8, Math.min(detail.y + 17, detail.height - card.offsetHeight - 10))}px`;
+  });
   viewer.addEventListener('layers', renderLayers);
   viewer.addEventListener('view', ({ detail }) => {
     $$('[data-view]').forEach(b => {const active = b.dataset.view === detail;b.classList.toggle('active', active);b.setAttribute('aria-pressed', active);});
@@ -97,8 +122,10 @@ try {
   });
   viewer.addEventListener('tool', ({ detail }) => {
     $('#measure-panel').hidden = detail !== 'measure';
-    for (const tool of ['orbit', 'measure']) {const button = $(`#${tool}-tool`);button.classList.toggle('active', detail === tool);button.setAttribute('aria-pressed', detail === tool);}
+    syncNavigation();
   });
+  viewer.addEventListener('navigation', ({ detail }) => {syncNavigation();if (detail === 'orbit') $('#view-label').textContent = 'Свободный ракурс';});
+  viewer.addEventListener('flyspeed', ({ detail }) => {$('#fly-speed').value = detail;$('#fly-speed-value').textContent = `${detail.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} м/с`;});
   viewer.addEventListener('measure', ({ detail }) => {
     $('#measure-instruction').textContent = detail.step === 1 ? 'Теперь выберите вторую точку' : detail.distance ? `${meters(detail.distance)} · выберите новую пару` : 'Выберите первую точку';
     $('#clear-measures').disabled = !detail.count && !detail.step;
@@ -107,8 +134,22 @@ try {
   $$('[data-model]').forEach(b => b.addEventListener('click', () => loadModel(b.dataset.model)));
   $$('[data-view]').forEach(b => b.addEventListener('click', () => viewer.setView(b.dataset.view)));
   $$('[data-mode]').forEach(b => b.addEventListener('click', () => {viewer.setSetting('mode', b.dataset.mode);syncMode();if (viewer.selected) updateSelection(viewer.selected);if (b.dataset.mode === 'finish' && !viewer.elements.some(e => e.override)) toast('Выберите объект и материал или примените готовую палитру справа.');}));
-  for (const key of ['textures', 'edges', 'dimensions']) $(`#${key}-toggle`).addEventListener('change', event => viewer.setSetting(key, event.target.checked));
-  $('#orbit-tool').addEventListener('click', () => viewer.setTool('orbit'));
+  for (const key of ['textures', 'edges', 'dimensions']) $(`#${key}-toggle`).addEventListener('change', event => {viewer.setSetting(key, event.target.checked);if (key === 'dimensions') $('#dimensions-note').hidden = !event.target.checked;});
+  $('#orbit-tool').addEventListener('click', () => {viewer.setNavigationMode('orbit');viewer.setTool('orbit');});
+  $('#fly-tool').addEventListener('click', () => {viewer.setTool('orbit');viewer.setNavigationMode(viewer.navigationMode === 'fly' ? 'orbit' : 'fly');});
+  $('#fly-close').addEventListener('click', () => viewer.setNavigationMode('orbit'));
+  $('#fly-speed').addEventListener('input', event => viewer.setFlySpeed(Number(event.target.value)));
+  $$('[data-fly-motion]').forEach(button => {
+    button.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;event.preventDefault();button.setPointerCapture(event.pointerId);button.classList.add('pressed');
+      viewer.renderer.domElement.focus({ preventScroll: true });viewer.flyControls?.setMotion(button.dataset.flyMotion, true);
+    });
+    const stop = () => {button.classList.remove('pressed');viewer.flyControls?.setMotion(button.dataset.flyMotion, false);};
+    for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(name, stop);
+    button.addEventListener('keydown', event => {if (event.code === 'Space' || event.code === 'Enter') {event.preventDefault();button.classList.add('pressed');viewer.flyControls?.setMotion(button.dataset.flyMotion, true);}});
+    button.addEventListener('keyup', event => {if (event.code === 'Space' || event.code === 'Enter') {event.preventDefault();stop();}});
+    button.addEventListener('blur', stop);
+  });
   $('#measure-tool').addEventListener('click', () => {viewer.setTool(viewer.tool === 'measure' ? 'orbit' : 'measure');if (viewer.tool === 'measure') toast('Нажмите на две поверхности. Рядом с вершиной включается привязка.');});
   $('#clear-measures').addEventListener('click', () => viewer.clearMeasurements());
   $('#fit-button').addEventListener('click', () => viewer.fit());
@@ -161,10 +202,12 @@ try {
     } catch (error) {showError(error);} finally {setBusy(false);}
   });
   window.addEventListener('keydown', event => {
-    if ($('#about-dialog').open || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(document.activeElement?.tagName)) return;
-    if (event.key.toLowerCase() === 'f') {event.preventDefault();viewer.fit();}
-    if (event.key.toLowerCase() === 'm') viewer.setTool(viewer.tool === 'measure' ? 'orbit' : 'measure');
-    if (event.key === 'Escape') {viewer.setTool('orbit');viewer.select(null);}
+    if ($('#about-dialog').open || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === 'Escape') {viewer.setNavigationMode('orbit');viewer.setTool('orbit');viewer.select(null);return;}
+    if (['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(document.activeElement?.tagName)) return;
+    if (event.code === 'KeyF') {event.preventDefault();viewer.fit();}
+    if (!event.repeat && event.code === 'KeyM') viewer.setTool(viewer.tool === 'measure' ? 'orbit' : 'measure');
+    if (!event.repeat && event.code === 'KeyV') {viewer.setTool('orbit');viewer.setNavigationMode(viewer.navigationMode === 'fly' ? 'orbit' : 'fly');}
     if (event.key === '/') {event.preventDefault();$('#layer-search').focus();}
     if (event.key === '1') viewer.setView('iso');if (event.key === '2') viewer.setView('top');
   });

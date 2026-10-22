@@ -5,13 +5,14 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createFinishTextures, projectedMaterial } from './textures.js';
 import { rendererOptions, setModelDepthRange, stabilizeSurfaceMaterial, setSurfaceShadowPolicy, fitModelShadow } from './lib/rendering.mjs';
+import { FreeFlyControls, perspectiveForFlight, orbitFromCamera } from './lib/free-fly.mjs';
 
 export const meters = n => `${n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} м`;
 const v3 = () => new THREE.Vector3();
 
 export class ModelViewer extends EventTarget {
   constructor(container) {
-    super();this.container = container;this.elements = [];this.layers = new Map();this.selected = null;this.measurements = [];this.pendingPoint = null;this.tool = 'orbit';
+    super();this.container = container;this.elements = [];this.layers = new Map();this.selected = null;this.hovered = null;this.measurements = [];this.pendingPoint = null;this.tool = 'orbit';this.navigationMode = 'orbit';this.flySpeed = 1.5;this.hoverPoint = null;this.hoverDirty = false;
     this.settings = { mode: 'original', textures: true, edges: false, dimensions: false, grid: true, section: false, sectionAxis: 'y', sectionValue: 72 };
     this.scene = new THREE.Scene();
     this.renderer = new THREE.WebGLRenderer(rendererOptions);
@@ -33,23 +34,62 @@ export class ModelViewer extends EventTarget {
     this.root = new THREE.Group();this.scene.add(this.root);
     this.measureGroup = new THREE.Group();this.dimensionGroup = new THREE.Group();this.scene.add(this.measureGroup, this.dimensionGroup);
     this.selectionBox = new THREE.Box3Helper(new THREE.Box3(), 0x2d6fdf);this.selectionBox.visible = false;this.selectionBox.material.depthTest = false;this.selectionBox.renderOrder = 5;this.scene.add(this.selectionBox);
+    this.hoverBox = new THREE.Box3Helper(new THREE.Box3(), 0x8aa16b);this.hoverBox.visible = false;this.hoverBox.material.depthTest = false;this.hoverBox.renderOrder = 4;this.scene.add(this.hoverBox);
     this.textures = createFinishTextures();this.customTextures = new Set();
     this.raycaster = new THREE.Raycaster();this.pointer = new THREE.Vector2();
     this.pointerDown = null;
-    this.renderer.domElement.addEventListener('pointerdown', e => {this.pointerDown = { x: e.clientX, y: e.clientY, button: e.button };});
+    this.renderer.domElement.addEventListener('pointerdown', e => {this.pointerDown = { x: e.clientX, y: e.clientY, button: e.button, id: e.pointerId, moved: false };});
+    this.renderer.domElement.addEventListener('pointermove', e => {
+      this.hoverPoint = { clientX: e.clientX, clientY: e.clientY };this.hoverDirty = true;
+      if (this.pointerDown && Math.hypot(e.clientX - this.pointerDown.x, e.clientY - this.pointerDown.y) > 5) this.pointerDown.moved = true;
+    });
+    this.renderer.domElement.addEventListener('pointerleave', () => {this.hoverPoint = null;this.setHovered(null);});
+    const cancelPointer = e => {if (this.pointerDown?.id === e.pointerId) this.pointerDown = null;this.hoverDirty = true;};
+    this.renderer.domElement.addEventListener('pointercancel', cancelPointer);this.renderer.domElement.addEventListener('lostpointercapture', cancelPointer);
     this.renderer.domElement.addEventListener('pointerup', e => {
-      if (!this.pointerDown || this.pointerDown.button !== 0 || Math.hypot(e.clientX - this.pointerDown.x, e.clientY - this.pointerDown.y) > 5) return;
+      const down = this.pointerDown;this.pointerDown = null;this.hoverDirty = true;
+      if (!down || down.id !== e.pointerId || down.button !== 0 || down.moved || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
+      this.renderer.domElement.focus({ preventScroll: true });
       const hit = this.pick(e);
       if (this.tool === 'measure') {if (hit) this.measurePoint(this.snapPoint(hit, e));}
       else this.select(hit?.object.userData.element || null);
     });
     this.renderer.domElement.addEventListener('dblclick', () => {if (this.selected && this.tool === 'orbit') this.fit(this.boxFor(this.selected));});
     this.resizeObserver = new ResizeObserver(() => this.resize());this.resizeObserver.observe(container);this.resize();
-    this.animate = () => {this.frame = requestAnimationFrame(this.animate);this.controls.update();this.renderer.render(this.scene, this.camera);this.labels.render(this.scene, this.camera);};this.animate();
+    this.animate = time => {
+      this.frame = requestAnimationFrame(this.animate);
+      const delta = Math.min((time - (this.lastFrame ?? time)) / 1000, 0.05);this.lastFrame = time;
+      const moved = this.navigationMode === 'fly' ? this.flyControls.update(delta) : this.controls.update();
+      if (moved) this.hoverDirty = true;
+      if (this.navigationMode === 'fly' && this.bounds) {
+        const range = this.camera.position.distanceTo(this.bounds.getCenter(v3())) + this.diagonal * 2;
+        if (range > this.camera.far * 0.9) {this.camera.far = range * 1.5;this.camera.updateProjectionMatrix();}
+      }
+      this.camera.updateMatrixWorld();this.updateHover(time);this.renderer.render(this.scene, this.camera);this.labels.render(this.scene, this.camera);
+    };this.frame = requestAnimationFrame(this.animate);
   }
 
   emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
-  configureControls() {this.controls.enableDamping = true;this.controls.dampingFactor = 0.09;this.controls.maxPolarAngle = Math.PI * 0.97;this.controls.screenSpacePanning = true;}
+  configureControls() {this.controls.enableDamping = true;this.controls.dampingFactor = 0.09;this.controls.maxPolarAngle = Math.PI * 0.97;this.controls.screenSpacePanning = true;this.controls.addEventListener('change', () => {this.hoverDirty = true;});}
+  setNavigationMode(mode) {
+    if (!this.bounds || mode === this.navigationMode) return;
+    const canvas = this.renderer.domElement;
+    if (mode === 'fly') {
+      this.controls.enabled = false;
+      this.camera = perspectiveForFlight(this.camera, this.controls.target, canvas.clientWidth / canvas.clientHeight);
+      setModelDepthRange(this.camera, this.diagonal);
+      this.flyControls = new FreeFlyControls(this.camera, canvas);this.flyControls.movementSpeed = this.flySpeed;
+      this.flyControls.addEventListener('change', () => {this.hoverDirty = true;});
+    } else {
+      this.flyControls?.dispose();this.flyControls = null;this.controls.dispose();
+      const rect = canvas.getBoundingClientRect(), hit = this.pick({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+      this.controls = orbitFromCamera(this.camera, hit?.distance || this.diagonal * 0.2, canvas);this.configureControls();
+      this.controls.minDistance = this.diagonal * 0.025;this.controls.maxDistance = this.diagonal * 12;
+    }
+    this.navigationMode = mode;this.hoverDirty = true;this.updateCursor();canvas.focus({ preventScroll: true });this.emit('navigation', mode);
+  }
+  setFlySpeed(speed) {this.flySpeed = Math.max(0.1, Math.min(10, speed));if (this.flyControls) this.flyControls.movementSpeed = this.flySpeed;this.emit('flyspeed', this.flySpeed);}
+  updateCursor() {this.renderer.domElement.style.cursor = this.tool === 'measure' ? 'crosshair' : this.navigationMode === 'fly' ? 'default' : 'grab';}
   resize() {
     const { width, height } = this.container.getBoundingClientRect();if (!width || !height) return;
     this.renderer.setSize(width, height);this.labels.setSize(width, height);
@@ -58,11 +98,11 @@ export class ModelViewer extends EventTarget {
     this.camera.updateProjectionMatrix();
   }
   clearModel() {
-    this.select(null);this.clearMeasurements();
+    this.setNavigationMode('orbit');this.setHovered(null);this.hoverPoint = null;this.select(null);this.clearMeasurements();
     const geometries = new Set(), materials = new Set(), maps = new Set();
     this.root.traverse(o => {if (o.geometry) geometries.add(o.geometry);if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) materials.add(m);if (o.userData.baseMaterial) materials.add(o.userData.baseMaterial);});
     materials.forEach(m => {if (m.map && ![...this.textures.values()].includes(m.map) && !this.customTextures.has(m.map)) maps.add(m.map);m.dispose();});geometries.forEach(g => g.dispose());maps.forEach(t => t.dispose());
-    this.scene.remove(this.root);this.root = new THREE.Group();this.scene.add(this.root);this.elements = [];this.layers.clear();
+    this.scene.remove(this.root);this.root = new THREE.Group();this.scene.add(this.root);this.elements = [];this.pickableMeshes = [];this.layers.clear();
   }
   loadIfc(model) {
     this.clearModel();
@@ -110,6 +150,7 @@ export class ModelViewer extends EventTarget {
     if (bounds.isEmpty() || !Number.isFinite(bounds.max.x)) throw new Error('Модель не содержит корректной геометрии.');
     const center = bounds.getCenter(v3());this.root.position.set(-center.x, -bounds.min.y, -center.z);this.root.updateMatrixWorld(true);
     this.bounds = new THREE.Box3().setFromObject(this.root);this.size = this.bounds.getSize(v3());this.diagonal = this.size.length();
+    this.elements.forEach(e => {e.bounds = this.boxFor(e);});this.pickableMeshes = this.elements.flatMap(e => e.meshes);
     for (const e of this.elements) {
       if (!this.layers.has(e.layer)) this.layers.set(e.layer, { name: e.layer, visible: !/потолок/i.test(e.layer), count: 0 });
       this.layers.get(e.layer).count++;
@@ -127,11 +168,32 @@ export class ModelViewer extends EventTarget {
     let triangles = 0;this.elements.forEach(e => e.meshes.forEach(m => {triangles += (m.geometry.index?.count || m.geometry.attributes.position.count) / 3;}));
     this.emit('loaded', { format, elements: this.elements.length, triangles: Math.round(triangles), layers: [...this.layers.values()], size: this.size.toArray() });
   }
-  boxFor(element) {const box = new THREE.Box3();element.meshes.forEach(m => box.expandByObject(m));return box;}
-  visibleBox() {const box = new THREE.Box3();this.elements.forEach(e => {if (this.layers.get(e.layer)?.visible) e.meshes.forEach(m => box.expandByObject(m));});return box;}
+  boxFor(element) {
+    if (element.bounds) return element.bounds.clone();
+    const box = new THREE.Box3();
+    for (const mesh of element.meshes) {if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();box.union(mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld));}
+    return box;
+  }
+  visibleBox() {const box = new THREE.Box3();this.elements.forEach(e => {if (this.layers.get(e.layer)?.visible) box.union(this.boxFor(e));});return box;}
   select(element) {this.selected = element;this.selectionBox.visible = !!element;if (element) this.selectionBox.box.copy(this.boxFor(element));this.emit('select', element);this.updateDimensions();}
-  setLayer(name, visible) {const layer = this.layers.get(name);if (!layer) return;layer.visible = visible;this.elements.filter(e => e.layer === name).forEach(e => e.meshes.forEach(m => {m.visible = visible;}));if (this.selected?.layer === name && !visible) this.select(null);this.updateDimensions();this.emit('layers', [...this.layers.values()]);}
-  setSetting(key, value) {this.settings[key] = value;if (['section', 'sectionAxis', 'sectionValue'].includes(key)) this.updateSection();else if (key === 'dimensions') this.updateDimensions();else this.updateStyle();}
+  setLayer(name, visible) {const layer = this.layers.get(name);if (!layer) return;layer.visible = visible;this.elements.filter(e => e.layer === name).forEach(e => e.meshes.forEach(m => {m.visible = visible;}));if (this.selected?.layer === name && !visible) this.select(null);if (this.hovered?.layer === name && !visible) this.setHovered(null);this.hoverDirty = true;this.updateDimensions();this.emit('layers', [...this.layers.values()]);}
+  setSetting(key, value) {this.settings[key] = value;if (['section', 'sectionAxis', 'sectionValue'].includes(key)) this.updateSection();else if (key === 'dimensions') {if (!value) this.setHovered(null);this.hoverDirty = true;this.updateDimensions();}else this.updateStyle();}
+  setHovered(element) {
+    if (!this.settings.dimensions) element = null;
+    if (element === this.hovered) return;
+    this.hovered = element;this.hoverBox.visible = !!element;
+    if (element) this.hoverBox.box.copy(this.boxFor(element));
+    this.updateDimensions();this.emit('hover', element);
+  }
+  updateHover(time) {
+    if (!this.settings.dimensions || !this.hoverPoint || this.pointerDown || this.flyControls?.drag || !this.hoverDirty || time - (this.lastHoverCheck ?? -Infinity) < 70) return;
+    this.lastHoverCheck = time;this.hoverDirty = false;
+    this.setHovered(this.pick(this.hoverPoint)?.object.userData.element || null);
+    if (this.hovered) {
+      const rect = this.container.getBoundingClientRect();
+      this.emit('hoverposition', { x: this.hoverPoint.clientX - rect.left, y: this.hoverPoint.clientY - rect.top, width: rect.width, height: rect.height });
+    }
+  }
   updateStyle() {
     const { mode, textures, edges, grid } = this.settings;
     for (const e of this.elements) for (const mesh of e.meshes) {
@@ -177,6 +239,7 @@ export class ModelViewer extends EventTarget {
     this.settings.mode = 'finish';this.updateStyle();if (this.selected) this.emit('select', this.selected);
   }
   updateSection() {
+    this.hoverDirty = true;
     this.renderer.clippingPlanes = [];
     if (this.settings.section && this.bounds) {
       const axis = this.settings.sectionAxis;const height = THREE.MathUtils.lerp(this.bounds.min[axis], this.bounds.max[axis], this.settings.sectionValue / 100);
@@ -186,6 +249,7 @@ export class ModelViewer extends EventTarget {
   }
   fit(box = this.visibleBox()) {
     if (box.isEmpty()) return;
+    this.setNavigationMode('orbit');
     const center = box.getCenter(v3()), size = box.getSize(v3());const aspect = this.container.clientWidth / this.container.clientHeight;
     const direction = this.camera.position.clone().sub(this.controls.target).normalize();
     if (this.camera.isPerspectiveCamera) {
@@ -200,6 +264,7 @@ export class ModelViewer extends EventTarget {
   }
   setView(view) {
     if (!this.bounds) return;
+    this.setNavigationMode('orbit');
     const target = this.visibleBox().isEmpty() ? this.bounds.getCenter(v3()) : this.visibleBox().getCenter(v3());
     const oldControls = this.controls;oldControls.dispose();
     this.camera = view === 'iso' ? new THREE.PerspectiveCamera(40, 1, 0.01, 1000) : new THREE.OrthographicCamera(-10, 10, 10, -10, 0.01, 1000);
@@ -209,9 +274,10 @@ export class ModelViewer extends EventTarget {
     this.resize();this.fit();this.emit('view', view);
   }
   pick(event) {
+    this.camera.updateMatrixWorld();
     const rect = this.renderer.domElement.getBoundingClientRect();this.pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const meshes = this.elements.flatMap(e => e.meshes.filter(m => m.visible));
+    const meshes = (this.pickableMeshes || this.elements.flatMap(e => e.meshes)).filter(m => {for (let object = m; object; object = object.parent) if (!object.visible) return false;return true;});
     return this.raycaster.intersectObjects(meshes, false).find(hit => this.renderer.clippingPlanes.every(p => p.distanceToPoint(hit.point) >= 0));
   }
   snapPoint(hit, event) {
@@ -224,7 +290,7 @@ export class ModelViewer extends EventTarget {
     }
     return result;
   }
-  setTool(tool) {this.tool = tool;this.cancelMeasurement();this.renderer.domElement.style.cursor = tool === 'measure' ? 'crosshair' : 'grab';this.emit('tool', tool);}
+  setTool(tool) {this.tool = tool;this.cancelMeasurement();this.updateCursor();this.emit('tool', tool);}
   label(text, point, className = 'dimension-label') {const div = document.createElement('div');div.className = className;div.textContent = text;const object = new CSS2DObject(div);object.position.copy(point);return object;}
   line(points, color = 0x3c79d6, group = this.measureGroup) {const geo = new THREE.BufferGeometry().setFromPoints(points);const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9 }));line.renderOrder = 4;group.add(line);return line;}
   marker(point) {const marker = new THREE.Mesh(new THREE.SphereGeometry(this.diagonal / 700, 12, 8), new THREE.MeshBasicMaterial({ color: 0x2f75dd, depthTest: false }));marker.position.copy(point);marker.renderOrder = 5;this.measureGroup.add(marker);return marker;}
@@ -241,7 +307,8 @@ export class ModelViewer extends EventTarget {
   clearMeasurements() {this.pendingPoint = null;this.pendingMarker = null;this.measurements = [];this.clearGroup(this.measureGroup);this.emit('measure', { step: 0, count: 0 });}
   updateDimensions() {
     this.clearGroup(this.dimensionGroup);if (!this.settings.dimensions || !this.bounds) return;
-    const box = this.selected ? this.boxFor(this.selected) : this.visibleBox();if (box.isEmpty()) return;
+    const target = this.hovered || this.selected;
+    const box = target ? this.boxFor(target) : this.visibleBox();if (box.isEmpty()) return;
     const { min, max } = box, size = box.getSize(v3()), gap = Math.max(size.length() * 0.07, 0.15), tick = gap * 0.15;
     const dimensions = [
       [new THREE.Vector3(min.x, min.y, max.z + gap), new THREE.Vector3(max.x, min.y, max.z + gap), size.x, new THREE.Vector3(0, 0, tick)],

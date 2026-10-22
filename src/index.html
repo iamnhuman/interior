@@ -48,6 +48,7 @@
             <label class="setting-row"><span><i data-lucide="image"></i>Текстуры</span><input id="textures-toggle" type="checkbox" role="switch" checked /><span class="toggle-track"></span></label>
             <label class="setting-row"><span><i data-lucide="scan-line"></i>Контуры</span><input id="edges-toggle" type="checkbox" role="switch" /><span class="toggle-track"></span></label>
             <label class="setting-row"><span><i data-lucide="ruler"></i>Габариты</span><input id="dimensions-toggle" type="checkbox" role="switch" /><span class="toggle-track"></span></label>
+            <p id="dimensions-note" class="dimensions-note" hidden>Наведите на объект, чтобы увидеть его габариты.</p>
           </section>
 
           <section class="layers-section">
@@ -65,6 +66,7 @@
           <div class="mobile-panels"><button id="project-panel-toggle" class="icon-button" aria-label="Модели и слои"><i data-lucide="layers"></i></button><button id="materials-panel-toggle" class="icon-button" aria-label="Материалы"><i data-lucide="palette"></i></button></div>
           <div class="viewport-tools" role="toolbar" aria-label="Инструменты просмотра">
             <button id="orbit-tool" class="tool-button active" aria-label="Вращать модель" title="Вращение и выбор объектов" aria-pressed="true"><i data-lucide="orbit"></i></button>
+            <button id="fly-tool" class="tool-button" aria-label="Свободный полёт камеры" title="Свободный полёт (V)" aria-pressed="false"><i data-lucide="navigation"></i></button>
             <button id="measure-tool" class="tool-button" aria-label="Измерить расстояние" title="Измерить между двумя точками (M)" aria-pressed="false"><i data-lucide="ruler"></i></button>
             <button id="section-tool" class="tool-button" aria-label="Включить разрез" title="Разрез модели" aria-pressed="false"><i data-lucide="slice"></i></button>
             <span class="toolbar-separator"></span>
@@ -76,10 +78,19 @@
             <div class="section-axis"><label for="section-axis">Плоскость</label><select id="section-axis"><option value="y">Горизонтальная · Y</option><option value="x">Вертикальная · X</option><option value="z">Вертикальная · Z</option></select></div>
             <input id="section-range" type="range" min="0" max="100" value="72" aria-label="Положение разреза" /><div class="range-caption"><span>Положение</span><strong id="section-height">—</strong></div>
           </div>
+          <div id="fly-panel" class="floating-panel fly-panel" hidden>
+            <div class="section-panel-title"><span><i data-lucide="navigation"></i>Свободный полёт</span><button id="fly-close" class="plain-icon" aria-label="Вернуться к вращению модели" title="Вернуться к вращению (Esc)"><i data-lucide="x"></i></button></div>
+            <div class="fly-keys"><kbd>W A S D</kbd><span>движение</span><kbd>Q / E</kbd><span>вниз / вверх</span><kbd>ПКМ</kbd><span>повернуть взгляд</span><kbd>Z / C</kbd><span>наклон камеры</span><kbd>Shift</kbd><span>ускорение ×4</span></div>
+            <div class="fly-speed-heading"><label for="fly-speed">Скорость</label><output id="fly-speed-value">1,5 м/с</output></div>
+            <input id="fly-speed" type="range" min="0.1" max="10" step="0.1" value="1.5" aria-label="Скорость полёта в метрах в секунду" />
+            <div class="fly-pad" role="group" aria-label="Движение камеры"><button data-fly-motion="forward" class="fly-forward" aria-label="Лететь вперёд" title="Вперёд">↑</button><button data-fly-motion="left" aria-label="Лететь влево" title="Влево">←</button><button data-fly-motion="back" aria-label="Лететь назад" title="Назад">↓</button><button data-fly-motion="right" aria-label="Лететь вправо" title="Вправо">→</button><button data-fly-motion="up" class="fly-vertical" aria-label="Лететь вверх">Вверх</button><button data-fly-motion="down" class="fly-vertical" aria-label="Лететь вниз">Вниз</button></div>
+            <p class="fly-note">Нажмите на 3D-вид для управления.<br/>Колесо — шаг вперёд / назад. Esc — выход.</p>
+          </div>
+          <div id="hover-dimensions" class="hover-dimensions" hidden><span class="eyebrow">ГАБАРИТЫ ОБЪЕКТА</span><strong id="hover-element-name"></strong><dl><div><dt>X · ширина</dt><dd id="hover-size-x"></dd></div><div><dt>Y · высота</dt><dd id="hover-size-y"></dd></div><div><dt>Z · глубина</dt><dd id="hover-size-z"></dd></div></dl></div>
           <div id="measure-panel" class="floating-panel measure-panel" hidden><i data-lucide="ruler"></i><div><strong id="measure-instruction">Выберите первую точку</strong><small>Привязка к ближайшим вершинам · Esc — выход</small></div><button id="clear-measures" class="plain-icon" title="Удалить измерения" aria-label="Удалить измерения" disabled><i data-lucide="trash-2"></i></button></div>
           <div class="stage-bottom">
             <div class="view-switch" role="group" aria-label="Ракурс камеры"><button data-view="iso" class="active" aria-pressed="true"><i data-lucide="box"></i>3D</button><button data-view="top" aria-pressed="false">План</button><button data-view="front" aria-pressed="false">Фасад</button><button data-view="side" aria-pressed="false">Сбоку</button></div>
-            <div class="navigation-hint"><span><i data-lucide="mouse-pointer-2"></i>Вращение</span><span>ПКМ — сдвиг</span><span>Колесо — масштаб</span></div>
+            <div class="navigation-hint" id="navigation-hint"><span><i data-lucide="mouse-pointer-2"></i>Вращение</span><span>ПКМ — сдвиг</span><span>Колесо — масштаб</span></div>
             <div class="axis-indicator" aria-hidden="true"><span class="axis-y">Y</span><span class="axis-z">Z</span><span class="axis-x">X</span><svg viewBox="0 0 60 60"><path class="y-line" d="M30 36V9"/><path class="x-line" d="m30 36 22 12"/><path class="z-line" d="M30 36 8 48"/><circle cx="30" cy="36" r="3"/></svg></div>
           </div>
           <div id="loading-overlay" class="loading-overlay"><div class="loading-mark"><span></span><span></span><span></span></div><p id="loading-label">Открываем пространство</p><span id="loading-detail">Геометрия и структура модели</span><div class="loading-bar"><span id="loading-progress"></span></div></div>
